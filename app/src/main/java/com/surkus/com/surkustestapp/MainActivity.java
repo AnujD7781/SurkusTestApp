@@ -24,18 +24,17 @@ import android.widget.FrameLayout;
 public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
-    private WebView mWebviewPop;
+    private WebView mWebViewPop;
     private FrameLayout mContainer;
     private Context mContext;
 
-    private String target_url_prefix = "members.surkus.com";
+    private String siteUrl = "https://members-beta.surkus.com";
+    private String siteDomain = "members-beta.surkus.com";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        String url = "";
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -44,21 +43,14 @@ public class MainActivity extends AppCompatActivity {
         WebSettings webSettings = webView.getSettings();
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
-        webSettings.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
         webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
         webSettings.setSupportMultipleWindows(true);
-
-        //These two lines are specific for my need. These are not necessary
-        if (Build.VERSION.SDK_INT >= 21) {
-            webSettings.setMixedContentMode( WebSettings.MIXED_CONTENT_ALWAYS_ALLOW );
-        }
 
         webView.setWebViewClient(new MyCustomWebViewClient());
         webView.setWebChromeClient(new UriWebChromeClient());
 
-        webView.loadUrl("https://members.surkus.com");
+        webView.loadUrl(siteUrl);
         mContext=this.getApplicationContext();
-
     }
 
 
@@ -80,23 +72,16 @@ public class MainActivity extends AppCompatActivity {
             String host = Uri.parse(url).getHost();
 
             if( url.startsWith("http:") || url.startsWith("https:") ) {
-
-                if(Uri.parse(url).getPath().equals("/connection-compte.html")) {
-                    Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://members.surkus.com"));
-                    startActivity(browserIntent);
-
-                    return true ;
-                }
-
-                if (host.equals(target_url_prefix)) {
-                    if (mWebviewPop != null) {
-                        mWebviewPop.setVisibility(View.GONE);
-                        mContainer.removeView(mWebviewPop);
-                        mWebviewPop = null;
+                if (host.equals(siteDomain)) {
+                    if (mWebViewPop != null) {
+                        mWebViewPop.setVisibility(View.GONE);
+                        mContainer.removeView(mWebViewPop);
+                        mWebViewPop = null;
                     }
                     return false;
                 }
-                if (host.equals("m.facebook.com") || host.equals("www.facebook.com") || host.equals("facebook.com")) {
+
+                if (host.contains("instagram.com") || host.contains("facebook.com")) {
                     return false;
                 }
                 // Otherwise, the link is not for a page on my site, so launch
@@ -105,42 +90,27 @@ public class MainActivity extends AppCompatActivity {
                 startActivity(intent);
                 return true;
             }
-            // Otherwise allow the OS to handle it
-            else if (url.startsWith("tel:")) {
-                Intent tel = new Intent(Intent.ACTION_DIAL, Uri.parse(url));
-                startActivity(tel);
-                return true;
-            }
-            //This is again specific for my website
-            else if (url.startsWith("mailto:")) {
-                Intent mail = new Intent(Intent.ACTION_SEND);
-                mail.setType("application/octet-stream");
-                String AdressMail = new String(url.replace("mailto:" , "")) ;
-                mail.putExtra(Intent.EXTRA_EMAIL, new String[]{ AdressMail });
-                mail.putExtra(Intent.EXTRA_SUBJECT, "");
-                mail.putExtra(Intent.EXTRA_TEXT, "");
-                startActivity(mail);
-                return true;
-            }
+
             return true;
         }
 
         @Override
         public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
             Log.d("onReceivedSslError", "onReceivedSslError");
-            //super.onReceivedSslError(view, handler, error);
         }
 
         @Override
         public void onPageFinished(WebView view, String url) {
-            if(url.startsWith("https://m.facebook.com/v2.7/dialog/oauth")){
-                if(mWebviewPop!=null)
+            if(url.startsWith("https://www.facebook.com/dialog/oauth") ||
+                    url.startsWith("https://members-beta.surkus.com/?code") ||
+                    url.startsWith("https://members-beta.surkus.com/auth/instagram/callback")){
+                if(mWebViewPop !=null)
                 {
-                    mWebviewPop.setVisibility(View.GONE);
-                    mContainer.removeView(mWebviewPop);
-                    mWebviewPop=null;
+                    mWebViewPop.setVisibility(View.GONE);
+                    mContainer.removeView(mWebViewPop);
+                    mWebViewPop =null;
                 }
-                view.loadUrl("https://members.surkus.com");
+
                 return;
             }
             super.onPageFinished(view, url);
@@ -152,16 +122,25 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public boolean onCreateWindow(WebView view, boolean isDialog,
                                       boolean isUserGesture, Message resultMsg) {
-            mWebviewPop = new WebView(mContext);
-            mWebviewPop.setVerticalScrollBarEnabled(false);
-            mWebviewPop.setHorizontalScrollBarEnabled(false);
-            mWebviewPop.setWebViewClient(new MyCustomWebViewClient());
-            mWebviewPop.getSettings().setJavaScriptEnabled(true);
-            mWebviewPop.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            mWebViewPop = new WebView(mContext);
+
+            WebSettings webSettings = mWebViewPop.getSettings();
+
+            webSettings.setJavaScriptEnabled(true);
+            webSettings.setDomStorageEnabled(true);
+            webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
+            webSettings.setSupportMultipleWindows(true);
+
+            mWebViewPop.setVerticalScrollBarEnabled(false);
+            mWebViewPop.setHorizontalScrollBarEnabled(false);
+            mWebViewPop.setWebViewClient(new MyCustomWebViewClient());
+            mWebViewPop.setWebChromeClient(new UriWebChromeClient());
+
+            mWebViewPop.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
-            mContainer.addView(mWebviewPop);
+            mContainer.addView(mWebViewPop);
             WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
-            transport.setWebView(mWebviewPop);
+            transport.setWebView(mWebViewPop);
             resultMsg.sendToTarget();
 
             return true;
