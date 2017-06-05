@@ -1,19 +1,21 @@
 package com.surkus.com.surkustestapp;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
-import android.net.http.SslError;
 import android.os.Build;
+import android.os.Environment;
 import android.os.Message;
+import android.provider.MediaStore;
 import android.support.annotation.RequiresApi;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
-import android.webkit.SslErrorHandler;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -21,73 +23,102 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
 public class MainActivity extends AppCompatActivity {
 
-    private WebView webView;
-    private WebView mWebViewPop;
+    private WebView mWebView;
+    private WebView mPopupWebView;
     private FrameLayout mContainer;
     private Context mContext;
+    private Uri mCameraPhotoPath;
+    private ValueCallback<Uri[]> mOnFileSelected = null;
+    private WebViewConfigurator mWebViewConfigurator = new WebViewConfigurator();
 
-    private String siteUrl = "https://members-beta.surkus.com";
-    private String siteDomain = "members-beta.surkus.com";
+    private static final String SITE_URL = "https://members-beta.surkus.com";
+    private static final String SITE_DOMAIN = "members-beta.surkus.com";
+    private static final int FILE_CHOOSER_REQUEST_CODE = 999;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         setContentView(R.layout.activity_main);
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
-        webView  = (WebView) findViewById(R.id.webview);
+
+        mWebView = (WebView) findViewById(R.id.webview);
         mContainer = (FrameLayout) findViewById(R.id.webview_frame);
-        WebSettings webSettings = webView.getSettings();
-        webSettings.setJavaScriptEnabled(true);
-        webSettings.setDomStorageEnabled(true);
-        webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
-        webSettings.setSupportMultipleWindows(true);
 
-        webView.setWebViewClient(new MyCustomWebViewClient());
-        webView.setWebChromeClient(new UriWebChromeClient());
+        mWebViewConfigurator.Configure(mWebView);
 
-        webView.loadUrl(siteUrl);
-        mContext=this.getApplicationContext();
+        mWebView.loadUrl(SITE_URL);
+
+        mContext = this.getApplicationContext();
     }
-
 
     @Override
     public void onBackPressed() {
-        if(webView.isFocused() && webView.canGoBack()) {
-            webView.goBack();
+        if(mWebView.isFocused() && mWebView.canGoBack()) {
+            mWebView.goBack();
         } else {
             super.onBackPressed();
         }
     }
 
-    private class MyCustomWebViewClient extends WebViewClient {
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == FILE_CHOOSER_REQUEST_CODE && mOnFileSelected != null) {
+            Uri[] results = null;
 
-        @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+            if (resultCode == RESULT_OK) {
+                if (data == null) {
+                    if (mCameraPhotoPath != null) {
+                        results = new Uri[] { mCameraPhotoPath };
+
+                        mCameraPhotoPath = null;
+                    }
+                } else {
+                    String dataString = data.getDataString();
+
+                    if (dataString != null) {
+                        results = new Uri[]{Uri.parse(dataString)};
+                    }
+                }
+            }
+
+            mOnFileSelected.onReceiveValue(results);
+            mOnFileSelected = null;
+        } else {
+            super.onActivityResult(requestCode, resultCode, data);
+        }
+    }
+
+    private class CustomWebViewClient extends WebViewClient {
+
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            String url = request.getUrl().toString();
-            String host = Uri.parse(url).getHost();
+            Uri uri = request.getUrl();
+            String uriScheme = uri.getScheme();
 
-            if( url.startsWith("http:") || url.startsWith("https:") ) {
-                if (host.equals(siteDomain)) {
-                    if (mWebViewPop != null) {
-                        mWebViewPop.setVisibility(View.GONE);
-                        mContainer.removeView(mWebViewPop);
-                        mWebViewPop = null;
-                    }
+            if (uriScheme.equals("http") || uriScheme.equals("https")) {
+                if (uri.getHost().equals(SITE_DOMAIN)) {
+                    removePopup();
+
                     return false;
                 }
 
-                if (host.contains("instagram.com") || host.contains("facebook.com")) {
+                if (isAuthHost(uri.getHost())) {
                     return false;
                 }
-                // Otherwise, the link is not for a page on my site, so launch
-                // another Activity that handles URLs
-                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+
+                Intent intent = new Intent(Intent.ACTION_VIEW, uri);
                 startActivity(intent);
+
                 return true;
             }
 
@@ -95,61 +126,124 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-            Log.d("onReceivedSslError", "onReceivedSslError");
+        public void onPageFinished(WebView view, String url) {
+            if (isCallbackUrl(url)) {
+                removePopup();
+            } else {
+                super.onPageFinished(view, url);
+            }
         }
 
-        @Override
-        public void onPageFinished(WebView view, String url) {
-            if(url.startsWith("https://www.facebook.com/dialog/oauth") ||
-                    url.startsWith("https://members-beta.surkus.com/?code") ||
-                    url.startsWith("https://members-beta.surkus.com/auth/instagram/callback")){
-                if(mWebViewPop !=null)
-                {
-                    mWebViewPop.setVisibility(View.GONE);
-                    mContainer.removeView(mWebViewPop);
-                    mWebViewPop =null;
-                }
+        private boolean isCallbackUrl(String url) {
+            return url.startsWith("https://www.facebook.com/dialog/oauth") ||
+                url.startsWith("https://members-beta.surkus.com/?code") ||
+                url.startsWith("https://members-beta.surkus.com/auth/instagram/callback");
+        }
 
-                return;
+        private boolean isAuthHost(String host) {
+            return host.contains("instagram.com") || host.contains("facebook.com");
+        }
+
+        private void removePopup() {
+            if (mPopupWebView != null) {
+                mPopupWebView.setVisibility(View.GONE);
+                mContainer.removeView(mPopupWebView);
+                mPopupWebView = null;
             }
-            super.onPageFinished(view, url);
         }
     }
 
-    private class UriWebChromeClient extends WebChromeClient {
+    private class CustomWebClient extends WebChromeClient {
 
         @Override
         public boolean onCreateWindow(WebView view, boolean isDialog,
                                       boolean isUserGesture, Message resultMsg) {
-            mWebViewPop = new WebView(mContext);
+            mPopupWebView = new WebView(mContext);
 
-            WebSettings webSettings = mWebViewPop.getSettings();
+            mWebViewConfigurator.Configure(mPopupWebView);
 
-            webSettings.setJavaScriptEnabled(true);
-            webSettings.setDomStorageEnabled(true);
-            webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
-            webSettings.setSupportMultipleWindows(true);
+            mPopupWebView.setVerticalScrollBarEnabled(false);
+            mPopupWebView.setHorizontalScrollBarEnabled(false);
 
-            mWebViewPop.setVerticalScrollBarEnabled(false);
-            mWebViewPop.setHorizontalScrollBarEnabled(false);
-            mWebViewPop.setWebViewClient(new MyCustomWebViewClient());
-            mWebViewPop.setWebChromeClient(new UriWebChromeClient());
-
-            mWebViewPop.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            mPopupWebView.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
-            mContainer.addView(mWebViewPop);
+            mContainer.addView(mPopupWebView);
             WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
-            transport.setWebView(mWebViewPop);
+            transport.setWebView(mPopupWebView);
             resultMsg.sendToTarget();
 
             return true;
         }
 
         @Override
-        public void onCloseWindow(WebView window) {
-            Log.d("onCloseWindow", "called");
+        public boolean onShowFileChooser(WebView webView,
+                                         ValueCallback<Uri[]> filePathCallback,
+                                         WebChromeClient.FileChooserParams fileChooserParams) {
+            if (mOnFileSelected != null) {
+                mOnFileSelected.onReceiveValue(null);
+            }
+
+            mOnFileSelected = filePathCallback;
+
+            Intent takePictureIntent = null;
+
+            if (hasCameraPermissions()) {
+                mCameraPhotoPath = generateCameraPhotoPath();
+
+                takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, mCameraPhotoPath);
+            }
+
+            Intent contentSelectionIntent = new Intent(Intent.ACTION_GET_CONTENT);
+            contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE);
+            contentSelectionIntent.setType("image/*");
+
+            Intent[] intentCollection;
+
+            if (takePictureIntent != null) {
+                intentCollection = new Intent[] { takePictureIntent };
+            } else {
+                intentCollection = new Intent[0];
+            }
+
+            Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
+
+            chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
+            chooserIntent.putExtra(Intent.EXTRA_TITLE, "Image Selector");
+            chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentCollection);
+
+            startActivityForResult(chooserIntent, FILE_CHOOSER_REQUEST_CODE);
+
+            return true;
         }
 
+        private Uri generateCameraPhotoPath() {
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+            String imageFileName = "JPEG_" + timeStamp + "_";
+            File storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+            String photoPath = "file:" + storageDir + "/" + imageFileName + ".jpg";
+
+            return Uri.parse(photoPath);
+        }
+
+        private boolean hasCameraPermissions() {
+            return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+                    checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+                    checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        }
+    }
+
+    private class WebViewConfigurator {
+        public void Configure(WebView view) {
+            WebSettings settings = view.getSettings();
+
+            settings.setJavaScriptEnabled(true);
+            settings.setDomStorageEnabled(true);
+            settings.setJavaScriptCanOpenWindowsAutomatically(true);
+            settings.setSupportMultipleWindows(true);
+
+            view.setWebViewClient(new CustomWebViewClient());
+            view.setWebChromeClient(new CustomWebClient());
+        }
     }
 }
