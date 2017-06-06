@@ -9,7 +9,10 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.Message;
 import android.provider.MediaStore;
+import android.support.annotation.NonNull;
 import android.support.annotation.RequiresApi;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.View;
@@ -35,12 +38,21 @@ public class MainActivity extends AppCompatActivity {
     private FrameLayout mContainer;
     private Context mContext;
     private Uri mCameraPhotoPath;
+    private boolean mRequestedCameraPermissions = false;
     private ValueCallback<Uri[]> mOnFileSelected = null;
     private WebViewConfigurator mWebViewConfigurator = new WebViewConfigurator();
 
     private static final String SITE_URL = "https://members-beta.surkus.com";
     private static final String SITE_DOMAIN = "members-beta.surkus.com";
-    private static final int FILE_CHOOSER_REQUEST_CODE = 999;
+
+    private static String[] CAMERA_PERMISSIONS = {
+        Manifest.permission.CAMERA,
+        Manifest.permission.READ_EXTERNAL_STORAGE,
+        Manifest.permission.WRITE_EXTERNAL_STORAGE
+    };
+
+    private static final int CAMERA_PERMISSIONS_REQUEST_CODE = 1;
+    private static final int FILE_CHOOSER_REQUEST_CODE = 2;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,7 +98,7 @@ public class MainActivity extends AppCompatActivity {
                     String dataString = data.getDataString();
 
                     if (dataString != null) {
-                        results = new Uri[]{Uri.parse(dataString)};
+                        results = new Uri[] { Uri.parse(dataString) };
                     }
                 }
             }
@@ -98,8 +110,32 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private class CustomWebViewClient extends WebViewClient {
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        if (requestCode == CAMERA_PERMISSIONS_REQUEST_CODE) {
+            mRequestedCameraPermissions = true;
+        } else {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        }
+    }
 
+    protected void requestCameraPermissions() {
+        if (!mRequestedCameraPermissions) {
+            ActivityCompat.requestPermissions(this, CAMERA_PERMISSIONS, CAMERA_PERMISSIONS_REQUEST_CODE);
+        }
+    }
+
+    protected boolean hasCameraPermissions() {
+        for (String permission : CAMERA_PERMISSIONS) {
+            if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_DENIED) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private class CustomWebViewClient extends WebViewClient {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
@@ -123,6 +159,15 @@ public class MainActivity extends AppCompatActivity {
             }
 
             return true;
+        }
+
+        @Override
+        public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+            if (Uri.parse(url).getPath().equals("/profile/photos")) {
+                requestCameraPermissions();
+            }
+
+            super.doUpdateVisitedHistory(view, url, isReload);
         }
 
         @Override
@@ -154,7 +199,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private class CustomWebClient extends WebChromeClient {
-
         @Override
         public boolean onCreateWindow(WebView view, boolean isDialog,
                                       boolean isUserGesture, Message resultMsg) {
@@ -194,10 +238,6 @@ public class MainActivity extends AppCompatActivity {
                 takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, mCameraPhotoPath);
             }
 
-            Intent contentSelectionIntent = new Intent(Intent.ACTION_GET_CONTENT);
-            contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE);
-            contentSelectionIntent.setType("image/*");
-
             Intent[] intentCollection;
 
             if (takePictureIntent != null) {
@@ -208,8 +248,7 @@ public class MainActivity extends AppCompatActivity {
 
             Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
 
-            chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
-            chooserIntent.putExtra(Intent.EXTRA_TITLE, "Image Selector");
+            chooserIntent.putExtra(Intent.EXTRA_INTENT, fileChooserParams.createIntent());
             chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentCollection);
 
             startActivityForResult(chooserIntent, FILE_CHOOSER_REQUEST_CODE);
@@ -224,12 +263,6 @@ public class MainActivity extends AppCompatActivity {
             String photoPath = "file:" + storageDir + "/" + imageFileName + ".jpg";
 
             return Uri.parse(photoPath);
-        }
-
-        private boolean hasCameraPermissions() {
-            return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-                    checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-                    checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
         }
     }
 
