@@ -29,6 +29,7 @@ import android.widget.FrameLayout;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.concurrent.ExecutionException;
 
 @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
 public class MainActivity extends AppCompatActivity {
@@ -163,7 +164,9 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
-            if (Uri.parse(url).getPath().equals("/profile/photos")) {
+            Uri uri = Uri.parse(url);
+
+            if (uri.getPath() != null && uri.getPath().equals("/profile/photos")) {
                 requestCameraPermissions();
             }
 
